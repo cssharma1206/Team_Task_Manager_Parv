@@ -57,6 +57,16 @@ exports.getProjectTasks = async (req, res) => {
     const { projectId } = req.params;
     const { status, priority, assignee, sort } = req.query;
 
+    // Verify the requesting user is actually a member of this project
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const uid = req.userId.toString();
+    const hasAccess =
+      project.owner.toString() === uid ||
+      project.members.some((m) => m.user.toString() === uid);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
     const filter = { project: projectId };
     if (status) filter.status = status;
     if (priority) filter.priority = priority;

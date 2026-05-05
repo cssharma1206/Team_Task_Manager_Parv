@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -194,6 +194,7 @@ function isOverdue(date) {
 export default function ProjectDetail() {
   const { projectId } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -204,8 +205,11 @@ export default function ProjectDetail() {
   const [filterPriority, setFilterPriority] = useState('');
   const [activeTab, setActiveTab] = useState('tasks');
 
-  const isOwner = project?.owner?._id === user?._id || project?.owner === user?._id;
-  const myRole = project?.members?.find(m => m.user._id === user?._id || m.user === user?._id)?.role;
+  const userId = user?._id?.toString();
+  const isOwner = project?.owner?._id?.toString() === userId || project?.owner?.toString() === userId;
+  const myRole = project?.members?.find(
+    m => m.user?._id?.toString() === userId || m.user?.toString() === userId
+  )?.role;
   const isAdmin = isOwner || myRole === 'admin';
 
   useEffect(() => {
@@ -217,7 +221,14 @@ export default function ProjectDetail() {
         setProject(pRes.data.project);
         setTasks(tRes.data.tasks);
       })
-      .catch(() => toast.error('Failed to load project'))
+      .catch((err) => {
+        if (err.response?.status === 403 || err.response?.status === 404) {
+          toast.error('You do not have access to this project');
+          navigate('/projects');
+        } else {
+          toast.error('Failed to load project');
+        }
+      })
       .finally(() => setLoading(false));
   }, [projectId]);
 
@@ -457,42 +468,59 @@ export default function ProjectDetail() {
             )}
           </div>
           <div className="space-y-3">
-            {project.members.map(member => (
-              <div key={member.user._id || member.user} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+            {project.members.map(member => {
+              const memberId = member.user._id?.toString() || member.user?.toString();
+              const isThisOwner = memberId === (project.owner?._id?.toString() || project.owner?.toString());
+              return (
+              <div key={memberId} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                 <div className="w-9 h-9 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-700 font-medium text-sm shrink-0">
                   {member.user.name?.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800">{member.user.name}</p>
+                  <p className="text-sm font-medium text-gray-800">
+                    {member.user.name}
+                    {isThisOwner && (
+                      <span className="ml-2 text-xs text-amber-600 font-normal">(You own this project)</span>
+                    )}
+                  </p>
                   <p className="text-xs text-gray-400">{member.user.email}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {isOwner ? (
+                  {/* Always show Owner badge for the owner — no dropdown ever */}
+                  {isThisOwner ? (
+                    <span className="flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">
+                      <Shield className="w-3 h-3" /> Owner
+                    </span>
+                  ) : isOwner ? (
+                    /* Current user is the owner → show editable dropdown for non-owners */
                     <select
                       value={member.role}
-                      onChange={e => handleRoleChange(member.user._id, e.target.value)}
+                      onChange={e => handleRoleChange(memberId, e.target.value)}
                       className="text-xs px-2 py-1 border border-gray-200 rounded-lg bg-white outline-none"
                     >
                       <option value="member">Member</option>
                       <option value="admin">Admin</option>
                     </select>
                   ) : (
+                    /* Non-owner → static badge only */
                     <span className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
                       member.role === 'admin' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'
                     }`}>
                       {member.role === 'admin' && <Shield className="w-3 h-3" />}
-                      {member.role}
+                      {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
                     </span>
                   )}
-                  {isOwner && member.user._id !== user._id && (
-                    <button onClick={() => handleRemoveMember(member.user._id)}
+                  {/* Remove button — only owner can remove, and can't remove themselves */}
+                  {isOwner && !isThisOwner && (
+                    <button onClick={() => handleRemoveMember(memberId)}
                       className="text-gray-400 hover:text-red-500 p-1 rounded">
                       <UserMinus className="w-4 h-4" />
                     </button>
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

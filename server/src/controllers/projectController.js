@@ -62,21 +62,23 @@ exports.getProjects = async (req, res) => {
 
 exports.getProject = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.projectId)
-      .populate('owner', 'name email')
-      .populate('members.user', 'name email');
-
-    if (!project) {
+    // Check access BEFORE populating — compare raw ObjectIds to avoid type mismatches
+    const rawProject = await Project.findById(req.params.projectId);
+    if (!rawProject) {
       return res.status(404).json({ message: 'Project not found' });
     }
 
-    const isOwner = project.owner._id.toString() === req.userId.toString();
-    const isMember = project.members.some(
-      (m) => m.user._id.toString() === req.userId.toString()
-    );
+    const uid = req.userId.toString();
+    const isOwner = rawProject.owner.toString() === uid;
+    const isMember = rawProject.members.some((m) => m.user.toString() === uid);
     if (!isOwner && !isMember) {
       return res.status(403).json({ message: 'Access denied' });
     }
+
+    // Access confirmed — now fetch with population for the response
+    const project = await Project.findById(req.params.projectId)
+      .populate('owner', 'name email')
+      .populate('members.user', 'name email');
 
     res.json({ project });
   } catch (error) {
